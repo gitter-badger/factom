@@ -11,6 +11,8 @@ import (
 	"time"
 	
 	"github.com/FactomProject/FactomCode/wallet"
+	capn "github.com/glycerine/go-capnproto"
+
 )
 
 var server string = "http://localhost:8083"
@@ -74,12 +76,41 @@ func NewChain(name []string, eids []string, data []byte) (c *Chain, err error) {
 // CommitEntry sends a message to the factom network containing a hash of the
 // entry to be used to verify the later RevealEntry.
 func CommitEntry(e *Entry) error {
+	// make a brand new, empty segment (message)
+	seg := capn.NewBuffer(nil)
+	msg1 := NewRootSignedMsg(seg) // root should be allocated first.
+	comit := NewCommitMsg(seg)
+	entry := NewCommitEntryMsg(seg)
+	head := NewCommitHeader(seg)
+
+	/*
+	head.SetVersion()
+	head.SetTimeNounce()
+	head.SetPayAmount()
+	*/
+	entry.SetHead(head)
+	//entry.SetHashEntry()
+
+	comit.SetEntry(entry)
+
+	msg1.Data().SetCommit(comit)
+	buf := new(bytes.Buffer)
+	seg.WriteTo(buf)
+
+	sig := wallet.SignData(buf.Bytes())	
+
+	msg1.SetSignedData((*sig.Sig)[:])
+	msg1.SetPublicKey((*sig.Pub.Key)[:])
+
+	buf = new(bytes.Buffer)
+	seg.WriteTo(buf)
+
 	var msg bytes.Buffer
 	
 	binary.Write(&msg, binary.BigEndian, uint64(time.Now().Unix()))
 	msg.WriteString(e.Hash())
 
-	sig := wallet.SignData(msg.Bytes())	
+	sig = wallet.SignData(msg.Bytes())	
 	// msg.Bytes should be a int64 timestamp followed by a binary entry
 	
 	data := url.Values{
